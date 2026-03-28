@@ -20,7 +20,7 @@ RACES = [
     {
         "id":       "hm_2025",
         "name":     "Half Marathon",
-        "date":     "2025-05-24",
+        "date":     "2026-05-24",
         "type":     "B",
         "distance": "21.1km run",
         "emoji":    "🏃",
@@ -28,7 +28,7 @@ RACES = [
     {
         "id":       "im703_2025",
         "name":     "Ironman 70.3",
-        "date":     "2025-06-28",
+        "date":     "2026-06-28",
         "type":     "A",
         "distance": "1.9km / 90km / 21.1km",
         "emoji":    "🏁",
