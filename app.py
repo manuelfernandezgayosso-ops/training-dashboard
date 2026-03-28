@@ -59,7 +59,9 @@ def load_csv(fname):
     p = DATA_DIR / fname
     if p.exists():
         try:
-            data = pd.read_csv(p).to_dict(orient="records")
+            df = pd.read_csv(p)
+            df = df.where(pd.notnull(df), None)
+            data = df.to_dict(orient="records")
             _cache[fname] = data
             return data
         except Exception:
