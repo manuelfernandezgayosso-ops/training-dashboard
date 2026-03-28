@@ -57,8 +57,7 @@ def load_csv(fname):
 
 
 def sync_data():
-    """Pull latest Strava data and regenerate all outputs."""
-    import subprocess, sys
+    import subprocess, sys, traceback
     scripts = [
         "strava_connector.py",
         "training_plan_generator.py",
@@ -66,8 +65,18 @@ def sync_data():
     ]
     for script in scripts:
         if Path(script).exists():
-            subprocess.run([sys.executable, script])
-    print(f"[{datetime.now().strftime('%H:%M')}] Sync complete")
+            print(f"[sync] Running {script}...", flush=True)
+            result = subprocess.run(
+                [sys.executable, script],
+                capture_output=True, text=True
+            )
+            if result.stdout: print(result.stdout, flush=True)
+            if result.stderr: print(f"[ERROR] {script}:\n{result.stderr}", flush=True)
+            if result.returncode != 0:
+                print(f"[sync] {script} failed with code {result.returncode}", flush=True)
+        else:
+            print(f"[sync] WARNING: {script} not found", flush=True)
+    print(f"[{datetime.now().strftime('%H:%M')}] Sync complete", flush=True)
 
 
 # ── Routes ────────────────────────────────────────────────────
