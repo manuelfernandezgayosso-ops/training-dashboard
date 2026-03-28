@@ -14,6 +14,8 @@ app = Flask(__name__)
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 DATA_DIR.mkdir(exist_ok=True)
+# In-memory cache
+_cache = {}
 
 # ── Race config — add future races here ──────────────────────
 RACES = [
@@ -36,21 +38,28 @@ RACES = [
 ]
 
 
-def load_json(fname, default):
+ddef load_json(fname, default):
+    if fname in _cache:
+        return _cache[fname]
     p = DATA_DIR / fname
     if p.exists():
         try:
-            return json.load(open(p))
+            data = json.load(open(p))
+            _cache[fname] = data
+            return data
         except Exception:
             pass
     return default
 
-
 def load_csv(fname):
+    if fname in _cache:
+        return _cache[fname]
     p = DATA_DIR / fname
     if p.exists():
         try:
-            return pd.read_csv(p).to_dict(orient="records")
+            data = pd.read_csv(p).to_dict(orient="records")
+            _cache[fname] = data
+            return data
         except Exception:
             pass
     return []
@@ -76,7 +85,9 @@ def sync_data():
                 print(f"[sync] {script} failed with code {result.returncode}", flush=True)
         else:
             print(f"[sync] WARNING: {script} not found", flush=True)
-    print(f"[{datetime.now().strftime('%H:%M')}] Sync complete", flush=True)
+    _cache.clear()
+        print("[sync] Cache cleared — fresh data will load on next request", flush=True)
+	print(f"[{datetime.now().strftime('%H:%M')}] Sync complete", flush=True)
 
 
 # ── Routes ────────────────────────────────────────────────────
@@ -160,6 +171,8 @@ def api_debug():
 # ── Scheduler — daily sync at 9 PM ───────────────────────────
 scheduler = BackgroundScheduler()
 scheduler.add_job(sync_data, "cron", hour=21, minute=0)
+import threading
+threading.Thread(target=sync_data, daemon=True).start()
 scheduler.start()
 
 
