@@ -66,7 +66,7 @@ def sync_data():
     ]
     for script in scripts:
         if Path(script).exists():
-            subprocess.run([sys.executable, script], capture_output=True)
+            subprocess.run([sys.executable, script])
     print(f"[{datetime.now().strftime('%H:%M')}] Sync complete")
 
 
