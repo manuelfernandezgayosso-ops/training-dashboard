@@ -166,3 +166,10 @@ scheduler.start()
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
+@app.route("/api/sync-log")
+def api_sync_log():
+    p = DATA_DIR / "sync.log"
+    if p.exists():
+        return p.read_text(), 200, {"Content-Type": "text/plain"}
+    return "No sync log yet - hit Sync Now first.", 200
