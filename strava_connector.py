@@ -60,8 +60,19 @@ def estimate_tss(dur_sec, avg_hr, lthr):
 # ── Token ─────────────────────────────────────────────────────
 def get_valid_token():
     if not TOKEN_FILE.exists():
-        console.print("\n[red]No Strava token found. Run: python3 strava_auth.py[/red]\n")
-        return None
+        refresh = os.getenv("STRAVA_REFRESH_TOKEN")
+        if not refresh:
+            print("No Strava token found. Set STRAVA_REFRESH_TOKEN env var.")
+            sys.exit(1)
+        token_data = {
+            "access_token": "",
+            "refresh_token": refresh,
+            "expires_at": 0
+        }
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(TOKEN_FILE, "w") as f:
+            json.dump(token_data, f)
+        print("  Token bootstrapped from environment variable.")
     with open(TOKEN_FILE) as f:
         token = json.load(f)
     if token.get("expires_at", 0) <= time.time() + 60:
