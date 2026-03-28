@@ -134,13 +134,19 @@ def api_notes():
 
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
-    """Manual sync trigger."""
-    try:
-        sync_data()
-        return jsonify({"status": "ok", "time": datetime.now().isoformat()})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    import threading
+    thread = threading.Thread(target=sync_data)
+    thread.daemon = True
+    thread.start()
+    return jsonify({"status": "ok", "time": datetime.now().isoformat()})
 
+@app.route("/api/debug")
+def api_debug():
+    files = {}
+    if DATA_DIR.exists():
+        for f in DATA_DIR.iterdir():
+            files[f.name] = f.stat().st_size
+    return jsonify({"data_dir": str(DATA_DIR.resolve()), "files": files})
 
 # ── Scheduler — daily sync at 9 PM ───────────────────────────
 scheduler = BackgroundScheduler()
