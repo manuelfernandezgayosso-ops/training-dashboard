@@ -60,8 +60,7 @@ def load_csv(fname):
     if p.exists():
         try:
             df = pd.read_csv(p)
-            df = df.where(pd.notnull(df), None)
-            data = df.to_dict(orient="records")
+            data = json.loads(df.to_json(orient="records"))
             _cache[fname] = data
             return data
         except Exception:
