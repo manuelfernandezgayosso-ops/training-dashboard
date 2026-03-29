@@ -74,6 +74,7 @@ def sync_data():
         "strava_connector.py",
         "training_plan_generator.py",
         "progress_tracker.py",
+        "nutrition_planner.py",
     ]
     for script in scripts:
         if Path(script).exists():
@@ -89,7 +90,7 @@ def sync_data():
         else:
             print(f"[sync] WARNING: {script} not found", flush=True)
     _cache.clear()
-    print("[sync] Cache cleared — fresh data will load on next request", flush=True)
+    print("[sync] Cache cleared", flush=True)
     print(f"[{datetime.now().strftime('%H:%M')}] Sync complete", flush=True)
 
 
@@ -144,6 +145,14 @@ def api_profile():
 def api_notes():
     return jsonify(load_json("progress_weekly_notes.json", []))
 
+@app.route("/api/nutrition")
+def api_nutrition():
+    return jsonify(load_json("nutrition_plan.json", []))
+
+@app.route("/api/nutrition-targets")
+def api_nutrition_targets():
+    return jsonify(load_csv("nutrition_targets.csv"))
+
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
     thread = threading.Thread(target=sync_data, daemon=True)
@@ -156,14 +165,18 @@ def api_debug():
     if DATA_DIR.exists():
         for f in DATA_DIR.iterdir():
             files[f.name] = f.stat().st_size
-    return jsonify({"data_dir": str(DATA_DIR.resolve()), "files": files, "cache_keys": list(_cache.keys())})
+    return jsonify({
+        "data_dir": str(DATA_DIR.resolve()),
+        "files": files,
+        "cache_keys": list(_cache.keys())
+    })
 
 @app.route("/api/sync-log")
 def api_sync_log():
     p = DATA_DIR / "sync.log"
     if p.exists():
         return p.read_text(), 200, {"Content-Type": "text/plain"}
-    return "No sync log yet - hit Sync Now first.", 200
+    return "No sync log yet.", 200
 
 
 # ── Scheduler + startup sync ──────────────────────────────────
@@ -171,7 +184,6 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(sync_data, "cron", hour=21, minute=0)
 scheduler.start()
 
-# Sync on startup so data is ready immediately after deploy
 threading.Thread(target=sync_data, daemon=True).start()
 
 
