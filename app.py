@@ -72,6 +72,7 @@ def sync_data():
     import subprocess, sys
     scripts = [
         "strava_connector.py",
+        "intervals_connector.py",
         "training_plan_generator.py",
         "progress_tracker.py",
         "nutrition_planner.py",
@@ -98,8 +99,9 @@ def sync_data():
 
 @app.route("/")
 def index():
-    profile = load_json("athlete_profile.json", {})
-    now = datetime.now()
+    profile   = load_json("athlete_profile.json", {})
+    readiness = load_json("today_readiness.json", {})
+    now       = datetime.now()
     race_cards = []
     for r in RACES:
         rd = date.fromisoformat(r["date"])
@@ -109,11 +111,20 @@ def index():
         athlete=profile.get("athlete_name", "Athlete"),
         races=race_cards,
         profile=profile,
+        readiness=readiness,
         generated=now.strftime("%B %d, %Y at %I:%M %p"),
         weekly_volume=profile.get("weekly_volume_hours", 0),
         compliance=profile.get("80_20_compliance_pct", 0),
         ctl=round(profile.get("estimated_ctl", 0), 1),
         tsb=round(profile.get("estimated_tsb", 0), 1),
+        readiness_score=readiness.get("readiness_score", 0),
+        readiness_label=readiness.get("readiness_label", "No data yet"),
+        readiness_color=readiness.get("readiness_color", "#64748b"),
+        hrv=readiness.get("hrv"),
+        hrv_baseline=readiness.get("hrv_baseline"),
+        sleep_hrs=readiness.get("sleep_hrs"),
+        sleep_score=readiness.get("sleep_score"),
+        resting_hr=readiness.get("resting_hr"),
     )
 
 
@@ -144,6 +155,18 @@ def api_profile():
 @app.route("/api/notes")
 def api_notes():
     return jsonify(load_json("progress_weekly_notes.json", []))
+
+@app.route("/api/wellness")
+def api_wellness():
+    return jsonify(load_csv("wellness.csv"))
+
+@app.route("/api/readiness")
+def api_readiness():
+    return jsonify(load_json("readiness.json", []))
+
+@app.route("/api/today-readiness")
+def api_today_readiness():
+    return jsonify(load_json("today_readiness.json", {}))
 
 @app.route("/api/nutrition")
 def api_nutrition():
