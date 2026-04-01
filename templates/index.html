@@ -553,7 +553,8 @@ function buildOverview(){
 function buildProgress(){
   if(!progressD.length) return;
   const weeks=[...new Set(progressD.map(d=>d.week))].sort((a,b)=>a-b);
-  const curWeek=weeks[weeks.length-1];
+  const today=new Date().toISOString().slice(0,10);
+  const curWeek=progressD.reduce((best,d)=>{if(d.plan_date&&d.plan_date<=today) return d.week>best?d.week:best; return best;},weeks[0]);
   const cwd=progressD.filter(d=>d.week==curWeek&&!d.is_bonus);
   const planned=cwd.filter(d=>d.sport!=='race').length;
   const completed=cwd.filter(d=>d.status==='completed').length;
