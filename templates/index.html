@@ -554,7 +554,7 @@ function buildProgress(){
   if(!progressD.length) return;
   const weeks=[...new Set(progressD.map(d=>d.week))].sort((a,b)=>a-b);
   const today=new Date().toISOString().slice(0,10);
-  const curWeek=progressD.reduce((best,d)=>{if(d.plan_date&&d.plan_date<=today) return d.week>best?d.week:best; return best;},weeks[0]);
+  const curWeek=progressD.reduce((best,d)=>{if(d.plan_date&&d.plan_date<=today)return d.week>best?d.week:best;return best;},weeks[0]);
   const cwd=progressD.filter(d=>d.week==curWeek&&!d.is_bonus);
   const planned=cwd.filter(d=>d.sport!=='race').length;
   const completed=cwd.filter(d=>d.status==='completed').length;
@@ -574,7 +574,7 @@ function buildProgress(){
   document.getElementById('wkVol').textContent=(cws.actual_hours||0)+'h';
   document.getElementById('wkVolSub').textContent=`of ${cws.planned_hours||0}h planned`;
   const actDates=[...new Set(progressD.filter(d=>d.actual_date).map(d=>d.actual_date))].sort().reverse();
-  let streak=0;const today=new Date().toISOString().slice(0,10);let check=today;
+  let streak=0;let check=today;
   for(const d of actDates){if(d===check){streak++;const dd=new Date(check);dd.setDate(dd.getDate()-1);check=dd.toISOString().slice(0,10);}else break;}
   document.getElementById('streak').textContent=streak;
   const cn=notes.find(n=>n.week==curWeek);
