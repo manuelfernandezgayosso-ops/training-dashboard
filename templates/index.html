@@ -143,6 +143,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
       {% endfor %}
     </div>
     <button class="sync-btn" onclick="triggerSync(this)">⟳ Sync Now</button>
+    <button class="sync-btn" id="rebaseBtn" onclick="triggerRebaseline(this)" style="border-color:rgba(245,158,11,.4);color:#f59e0b;background:rgba(245,158,11,.08)">📐 Re-baseline</button>
   </div>
 </div>
 
@@ -420,6 +421,22 @@ tr:hover td{background:rgba(255,255,255,.015)}
     </div>
     {% endfor %}
   </div>
+  <!-- Race Goals & Paces -->
+  <div class="card mb" id="goalsCard">
+    <div class="ct">🎯 Race Goals &amp; Training Paces</div>
+    <div id="goalsContent" style="color:var(--muted);font-size:.82rem">Loading goals...</div>
+  </div>
+
+  <!-- Rebaseline status -->
+  <div class="card mb" style="border-color:rgba(245,158,11,.2)">
+    <div class="ct">📐 Plan Re-baselining</div>
+    <div style="font-size:.82rem;line-height:1.8;color:var(--muted)">
+      The plan auto-rebaselines <strong style="color:var(--text)">weekly</strong> based on your current fitness (CTL), wellness (HRV), and progress.<br>
+      Hit <strong style="color:#f59e0b">Re-baseline</strong> at the top to force an update now — the plan will adjust within ~60 seconds.<br>
+      Last rebaseline: <span id="lastRebaseline" style="color:var(--text)">checking...</span>
+    </div>
+  </div>
+
   <div class="card">
     <div class="ct">➕ Adding Future Races</div>
     <div style="font-size:.85rem;line-height:1.8;color:var(--muted)">
@@ -459,10 +476,53 @@ function triggerSync(btn){
     .catch(()=>{btn.textContent='✗ Error';btn.classList.remove('syncing');btn.disabled=false;});
 }
 
+function triggerRebaseline(btn){
+  btn.textContent='⟳ Rebaselining...';btn.style.opacity='.6';btn.disabled=true;
+  fetch('/api/rebaseline',{method:'POST'})
+    .then(r=>r.json())
+    .then(()=>{
+      btn.textContent='✓ Done! Reloading...';
+      setTimeout(()=>location.reload(),8000);
+    })
+    .catch(()=>{btn.textContent='✗ Error';btn.style.opacity='1';btn.disabled=false;});
+}
+
+function buildGoals(goals){
+  // Update last rebaseline timestamp
+  fetch('/api/rebaseline-status').then(r=>r.json()).then(d=>{
+    const el=document.getElementById('lastRebaseline');
+    if(el) el.textContent=d.last_rebaseline?new Date(d.last_rebaseline).toLocaleString():'Never (syncs tonight)';
+  }).catch(()=>{});
+
+  const el=document.getElementById('goalsContent');
+  if(!el||!goals||!goals.half_marathon) return;
+  const hm=goals.half_marathon, im=goals.im703;
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+      <div style="background:var(--surface2);border-radius:10px;padding:14px">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--accent);margin-bottom:10px">🏃 Half Marathon — ${hm.target_time}</div>
+        <div style="font-size:.75rem;line-height:2">
+          <div><span style="color:var(--muted)">Race pace</span> <strong style="color:var(--text);margin-left:8px">${hm.race_pace}</strong></div>
+          <div><span style="color:var(--muted)">Zone 2 easy</span> <strong style="color:#22c55e;margin-left:8px">${hm.zones.zone2}</strong></div>
+          <div><span style="color:var(--muted)">Zone 3 tempo</span> <strong style="color:#f59e0b;margin-left:8px">${hm.zones.zone3}</strong></div>
+          <div><span style="color:var(--muted)">Zone 4 threshold</span> <strong style="color:#ff6b35;margin-left:8px">${hm.zones.zone4}</strong></div>
+        </div>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--accent2);margin-bottom:10px">🏁 Ironman 70.3 — ${im.projected_total}</div>
+        <div style="font-size:.75rem;line-height:2">
+          <div><span style="color:var(--muted)">🏊 Swim ${im.swim.target_time}</span> <strong style="color:var(--accent);margin-left:8px">${im.swim.race_pace}</strong> race · <span style="color:#22c55e">${im.swim.zones.zone2}</span> easy</div>
+          <div><span style="color:var(--muted)">🚴 Bike ${im.bike.target_time}</span> <strong style="color:var(--accent);margin-left:8px">${im.bike.race_speed}</strong> race · <span style="color:#22c55e">${im.bike.zones.zone2}</span> easy</div>
+          <div><span style="color:var(--muted)">🏃 Run ${im.run.target_time}</span> <strong style="color:var(--accent);margin-left:8px">${im.run.race_pace}</strong> race · <span style="color:#22c55e">${im.run.zones.zone2}</span> easy</div>
+        </div>
+      </div>
+    </div>`;
+}
+
 async function loadAll(){
   const safe=url=>fetch(url).then(r=>r.json()).catch(()=>[]);
   const safeObj=url=>fetch(url).then(r=>r.json()).catch(()=>({}));
-  const [a,f,p,pr,w,pf,n,wd,rd,nd]=await Promise.all([
+  const [a,f,p,pr,w,pf,n,wd,rd,nd,gl]=await Promise.all([
     safe('/api/activities'),
     safe('/api/fitness'),
     safe('/api/plan'),
@@ -473,12 +533,13 @@ async function loadAll(){
     safe('/api/wellness'),
     safe('/api/readiness'),
     safe('/api/nutrition'),
+    safeObj('/api/goals'),
   ]);
   acts=a;fitD=f;planD=p;progressD=pr;weeklyD=w;prof=pf;notes=n;
   wellnessD=Array.isArray(wd)?wd:[];
   readinessD=Array.isArray(rd)?rd:[];
   nutritionD=Array.isArray(nd)?nd:[];
-  buildOverview();buildProgress();buildPlan();buildWellness();buildNutrition();
+  buildOverview();buildProgress();buildPlan();buildWellness();buildNutrition();buildGoals(gl);
 }
 
 // ── Overview ─────────────────────────────────────────────────
