@@ -3,6 +3,7 @@
 IRONMAN 70.3 Training System — Progress Tracker
 Matches your actual Strava workouts to the planned sessions.
 Calculates compliance, zone accuracy, and volume deltas.
+Unplanned/bonus sessions are tracked separately.
 Usage: python3 progress_tracker.py
 """
 
@@ -44,6 +45,16 @@ def duration_compliance_pct(actual_min: float, planned_min: float) -> float:
     if not planned_min or planned_min == 0: return 0.0
     return round((actual_min / planned_min) * 100, 1)
 
+def get_week_number(act_date, plan: pd.DataFrame):
+    """Find which training week a date falls in."""
+    for _, row in plan.iterrows():
+        plan_date  = row["date"]
+        week_start = plan_date - timedelta(days=plan_date.weekday())
+        week_end   = week_start + timedelta(days=6)
+        if week_start <= act_date <= week_end:
+            return int(row.get("week", 0)), str(row.get("phase", ""))
+    return 0, ""
+
 
 # ── Load data ─────────────────────────────────────────────────
 
@@ -74,13 +85,13 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
     """
     For each planned session, find the best matching actual activity.
     Match by sport + week — any activity in the same Mon-Sun week counts.
-    If multiple candidates, pick closest duration to planned.
-    Each activity can only be matched once (used_indices prevents double-counting).
+    Each activity can only be matched once.
+    Unmatched activities within the plan window are appended as 'bonus' rows.
     """
     planned = plan[plan["sport"].isin(["run","bike","swim","race"])].copy()
 
     results = []
-    used_indices = set()  # track which activities have already been matched
+    used_indices = set()
 
     for _, p in planned.iterrows():
         plan_date  = p["date"]
@@ -92,7 +103,6 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
         phase      = p.get("phase", "")
         week_focus = p.get("week_focus", "")
 
-        # Match by sport + week (Mon–Sun window)
         week_start = plan_date - timedelta(days=plan_date.weekday())
         week_end   = week_start + timedelta(days=6)
 
@@ -115,6 +125,7 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
                 "planned_zone":       plan_zone,
                 "week_focus":         week_focus,
                 "status":             "missed",
+                "is_bonus":           False,
                 "actual_date":        None,
                 "actual_min":         0,
                 "actual_distance_km": 0,
@@ -127,14 +138,13 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
                 "activity_id":        None,
             })
         else:
-            # Pick best match — closest duration to planned
             if len(candidates) > 1:
                 candidates = candidates.copy()
                 candidates["dur_diff"] = abs(candidates["duration_min"] - plan_min)
                 candidates = candidates.sort_values("dur_diff")
 
             best = candidates.iloc[0]
-            used_indices.add(best.name)  # mark this activity as used
+            used_indices.add(best.name)
 
             actual_min  = best.get("duration_min", 0) or 0
             actual_zone = best.get("zone_80_20", "Unknown") or "Unknown"
@@ -159,6 +169,7 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
                 "planned_zone":       plan_zone,
                 "week_focus":         week_focus,
                 "status":             status,
+                "is_bonus":           False,
                 "actual_date":        str(best.get("date_only", "")),
                 "actual_min":         round(actual_min, 1),
                 "actual_distance_km": round(best.get("distance_km", 0) or 0, 2),
@@ -171,7 +182,54 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
                 "activity_id":        best.get("activity_id", ""),
             })
 
-    return pd.DataFrame(results)
+    # ── Bonus sessions — unmatched activities within plan window ──
+    plan_start = plan["date"].min()
+    plan_end   = plan["date"].max()
+
+    unmatched = acts[
+        (~acts.index.isin(used_indices)) &
+        (acts["date_only"] >= plan_start) &
+        (acts["date_only"] <= plan_end)
+    ]
+
+    for _, a in unmatched.iterrows():
+        act_date = a["date_only"]
+        week_num, phase = get_week_number(act_date, plan)
+        if week_num == 0:
+            continue
+
+        actual_min  = a.get("duration_min", 0) or 0
+        actual_zone = a.get("zone_80_20", "Unknown") or "Unknown"
+        sport       = a.get("sport", "unknown")
+
+        results.append({
+            "week":               week_num,
+            "phase":              phase,
+            "plan_date":          str(act_date),
+            "day":                act_date.strftime("%A") if hasattr(act_date, "strftime") else "",
+            "sport":              sport,
+            "session_type":       "Bonus",
+            "planned_min":        0,
+            "planned_zone":       "—",
+            "week_focus":         "Unplanned",
+            "status":             "bonus",
+            "is_bonus":           True,
+            "actual_date":        str(act_date),
+            "actual_min":         round(actual_min, 1),
+            "actual_distance_km": round(a.get("distance_km", 0) or 0, 2),
+            "actual_hr":          round(a.get("avg_hr", 0) or 0, 0),
+            "actual_zone":        actual_zone,
+            "actual_tss":         round(a.get("tss_estimated", 0) or 0, 1),
+            "duration_pct":       100,
+            "zone_compliant":     False,
+            "activity_name":      a.get("activity_name", ""),
+            "activity_id":        a.get("activity_id", ""),
+        })
+
+    df = pd.DataFrame(results)
+    if not df.empty:
+        df = df.sort_values(["week", "plan_date", "is_bonus"]).reset_index(drop=True)
+    return df
 
 
 # ── Weekly summary ────────────────────────────────────────────
@@ -179,15 +237,19 @@ def match_sessions(acts: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
 def weekly_summary(progress: pd.DataFrame) -> pd.DataFrame:
     summaries = []
     for week in sorted(progress["week"].unique()):
-        wdf = progress[progress["week"] == week]
-        planned_sessions  = len(wdf[wdf["sport"] != "race"])
-        completed         = len(wdf[wdf["status"] == "completed"])
-        partial           = len(wdf[wdf["status"] == "partial"])
-        missed            = len(wdf[wdf["status"] == "missed"])
-        planned_min_total = wdf["planned_min"].sum()
-        actual_min_total  = wdf["actual_min"].sum()
-        zone_compliant_n  = wdf["zone_compliant"].sum()
-        zone_total        = len(wdf[wdf["status"].isin(["completed","partial"])])
+        wdf     = progress[progress["week"] == week]
+        planned = wdf[~wdf["is_bonus"]]
+        bonus   = wdf[wdf["is_bonus"]]
+
+        planned_sessions  = len(planned[planned["sport"] != "race"])
+        completed         = len(planned[planned["status"] == "completed"])
+        partial           = len(planned[planned["status"] == "partial"])
+        missed            = len(planned[planned["status"] == "missed"])
+        bonus_count       = len(bonus)
+        planned_min_total = planned["planned_min"].sum()
+        actual_min_total  = wdf["actual_min"].sum()  # includes bonus volume
+        zone_compliant_n  = planned["zone_compliant"].sum()
+        zone_total        = len(planned[planned["status"].isin(["completed","partial"])])
         phase             = wdf["phase"].iloc[0] if not wdf.empty else ""
 
         summaries.append({
@@ -197,6 +259,7 @@ def weekly_summary(progress: pd.DataFrame) -> pd.DataFrame:
             "completed":           completed,
             "partial":             partial,
             "missed":              missed,
+            "bonus_sessions":      bonus_count,
             "completion_pct":      round((completed + partial * 0.5) / max(planned_sessions, 1) * 100, 1),
             "planned_hours":       round(planned_min_total / 60, 1),
             "actual_hours":        round(actual_min_total / 60, 1),
@@ -212,9 +275,10 @@ def weekly_summary(progress: pd.DataFrame) -> pd.DataFrame:
 def coaching_note(week_df: pd.DataFrame, week_summary: dict) -> str:
     notes = []
 
-    completion = week_summary.get("completion_pct", 0)
-    zone_comp  = week_summary.get("zone_compliance_pct", 0)
-    vol_pct    = week_summary.get("volume_pct", 0)
+    completion  = week_summary.get("completion_pct", 0)
+    zone_comp   = week_summary.get("zone_compliance_pct", 0)
+    vol_pct     = week_summary.get("volume_pct", 0)
+    bonus_count = week_summary.get("bonus_sessions", 0)
 
     zone_x_count = len(week_df[week_df["actual_zone"] == "Zone X"])
     if zone_x_count > 0:
@@ -225,12 +289,18 @@ def coaching_note(week_df: pd.DataFrame, week_summary: dict) -> str:
         )
 
     hard_sessions = len(week_df[week_df["actual_zone"].isin(["Zone 3","Zone 4","Zone 5"])])
-    total_done    = len(week_df[week_df["status"].isin(["completed","partial"])])
+    total_done    = len(week_df[week_df["status"].isin(["completed","partial","bonus"])])
     if total_done > 0 and hard_sessions / max(total_done, 1) > 0.3:
         notes.append(
             f"You did {hard_sessions}/{total_done} sessions at Zone 3+. "
             "Fitzgerald's rule: no more than 20% of sessions should be hard. "
             "Your easy days need to be easier."
+        )
+
+    if bonus_count > 0:
+        notes.append(
+            f"You added {bonus_count} unplanned session(s) this week. "
+            "Extra easy work is fine — just make sure it doesn't compromise your planned key sessions."
         )
 
     if vol_pct > 115:
@@ -277,21 +347,23 @@ def print_progress(progress: pd.DataFrame, weekly: pd.DataFrame) -> None:
     active_weeks = weekly[weekly["actual_hours"] > 0]
 
     t = Table(title="Weekly Summary", style="cyan", show_lines=True)
-    for col in ["Wk","Phase","Done/Planned","Completion","Vol Planned","Vol Actual","Zone Comply"]:
+    for col in ["Wk","Phase","Done/Planned","Bonus","Completion","Vol Planned","Vol Actual","Zone Comply"]:
         t.add_column(col, justify="center")
 
     phase_colors = {"Base":"blue","Build":"yellow","Peak":"red","Taper":"green","B-Race":"magenta"}
 
     for _, row in active_weeks.iterrows():
-        c   = row["completion_pct"]
-        zc  = row["zone_compliance_pct"]
-        col = "green" if c >= 85 else "yellow" if c >= 65 else "red"
-        zcol= "green" if zc >= 75 else "yellow" if zc >= 50 else "red"
-        pc  = phase_colors.get(row["phase"], "white")
+        c    = row["completion_pct"]
+        zc   = row["zone_compliance_pct"]
+        col  = "green" if c >= 85 else "yellow" if c >= 65 else "red"
+        zcol = "green" if zc >= 75 else "yellow" if zc >= 50 else "red"
+        pc   = phase_colors.get(row["phase"], "white")
+        bonus = int(row.get("bonus_sessions", 0))
         t.add_row(
             str(int(row["week"])),
             f"[{pc}]{row['phase']}[/{pc}]",
             f"{int(row['completed'])}/{int(row['planned_sessions'])}",
+            f"[cyan]+{bonus}[/cyan]" if bonus > 0 else "—",
             f"[{col}]{c}%[/{col}]",
             f"{row['planned_hours']}h",
             f"{row['actual_hours']}h",
@@ -305,17 +377,23 @@ def print_progress(progress: pd.DataFrame, weekly: pd.DataFrame) -> None:
     if not today_week.empty:
         console.print("\n[bold]This week's sessions:[/bold]")
         st = Table(style="dim", show_header=True, show_lines=False)
-        for col in ["Date","Sport","Planned","Actual","Status","Zone OK?"]:
+        for col in ["Date","Sport","Type","Planned","Actual","Status","Zone OK?"]:
             st.add_column(col)
         for _, r in today_week.iterrows():
-            status_color = {"completed":"green","partial":"yellow","missed":"red"}.get(r["status"],"white")
+            if r["is_bonus"]:
+                status_color = "cyan"
+                status_label = "BONUS"
+            else:
+                status_color = {"completed":"green","partial":"yellow","missed":"red"}.get(r["status"],"white")
+                status_label = r["status"]
             st.add_row(
                 str(r["plan_date"]),
                 r["sport"].upper(),
-                f"{int(r['planned_min'])} min / {r['planned_zone']}",
+                r.get("session_type","") or "",
+                f"{int(r['planned_min'])} min / {r['planned_zone']}" if not r["is_bonus"] else "—",
                 f"{int(r['actual_min'])} min / {r['actual_zone'] or '—'}" if r["actual_min"] > 0 else "—",
-                f"[{status_color}]{r['status']}[/{status_color}]",
-                "[green]✓[/green]" if r["zone_compliant"] else "[red]✗[/red]" if r["actual_min"] > 0 else "—",
+                f"[{status_color}]{status_label}[/{status_color}]",
+                "[green]✓[/green]" if r["zone_compliant"] else "[cyan]—[/cyan]" if r["is_bonus"] else "[red]✗[/red]" if r["actual_min"] > 0 else "—",
             )
         console.print(st)
 
@@ -337,7 +415,10 @@ def main():
     console.print(f"\n  Loaded [yellow]{len(acts)}[/yellow] activities and [yellow]{len(plan)}[/yellow] planned sessions")
     console.print("  Matching actuals to plan (by sport + week)...")
     progress = match_sessions(acts, plan)
-    console.print(f"  [green]✓ {len(progress)} sessions matched[/green]")
+
+    planned_count = len(progress[~progress["is_bonus"]])
+    bonus_count   = len(progress[progress["is_bonus"]])
+    console.print(f"  [green]✓ {planned_count} planned sessions matched, {bonus_count} bonus sessions found[/green]")
 
     weekly = weekly_summary(progress)
 

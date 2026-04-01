@@ -94,6 +94,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .s-completed{color:var(--green);font-weight:600;text-transform:uppercase;font-size:.72rem}
 .s-partial{color:var(--yellow);font-weight:600;text-transform:uppercase;font-size:.72rem}
 .s-missed{color:var(--red);font-weight:600;text-transform:uppercase;font-size:.72rem}
+.s-bonus{color:var(--accent);font-weight:600;text-transform:uppercase;font-size:.72rem}
 /* Readiness ring */
 .rr-wrap{display:flex;align-items:center;gap:18px}
 .rr-ring{position:relative;width:80px;height:80px;flex-shrink:0}
@@ -459,17 +460,19 @@ function triggerSync(btn){
 }
 
 async function loadAll(){
+  const safe=url=>fetch(url).then(r=>r.json()).catch(()=>[]);
+  const safeObj=url=>fetch(url).then(r=>r.json()).catch(()=>({}));
   const [a,f,p,pr,w,pf,n,wd,rd,nd]=await Promise.all([
-    fetch('/api/activities').then(r=>r.json()),
-    fetch('/api/fitness').then(r=>r.json()),
-    fetch('/api/plan').then(r=>r.json()),
-    fetch('/api/progress').then(r=>r.json()),
-    fetch('/api/weekly').then(r=>r.json()),
-    fetch('/api/profile').then(r=>r.json()),
-    fetch('/api/notes').then(r=>r.json()),
-    fetch('/api/wellness').then(r=>r.json()),
-    fetch('/api/readiness').then(r=>r.json()),
-    fetch('/api/nutrition').then(r=>r.json()),
+    safe('/api/activities'),
+    safe('/api/fitness'),
+    safe('/api/plan'),
+    safe('/api/progress'),
+    safe('/api/weekly'),
+    safeObj('/api/profile'),
+    safe('/api/notes'),
+    safe('/api/wellness'),
+    safe('/api/readiness'),
+    safe('/api/nutrition'),
   ]);
   acts=a;fitD=f;planD=p;progressD=pr;weeklyD=w;prof=pf;notes=n;
   wellnessD=Array.isArray(wd)?wd:[];
@@ -551,7 +554,7 @@ function buildProgress(){
   if(!progressD.length) return;
   const weeks=[...new Set(progressD.map(d=>d.week))].sort((a,b)=>a-b);
   const curWeek=weeks[weeks.length-1];
-  const cwd=progressD.filter(d=>d.week==curWeek);
+  const cwd=progressD.filter(d=>d.week==curWeek&&!d.is_bonus);
   const planned=cwd.filter(d=>d.sport!=='race').length;
   const completed=cwd.filter(d=>d.status==='completed').length;
   const partial=cwd.filter(d=>d.status==='partial').length;
@@ -599,17 +602,20 @@ function buildProgress(){
   function renderProg(fw){
     tb.innerHTML='';
     (fw?progressD.filter(d=>d.week==fw):progressD).forEach(r=>{
-      const sc={'completed':'s-completed','partial':'s-partial','missed':'s-missed'}[r.status]||'';
-      const dp=r.duration_pct||0,bw=Math.min(100,dp),bc=dp>=85?'#22c55e':dp>=50?'#f59e0b':'#ef4444';
+      const isBonus=r.is_bonus||r.status==='bonus';
+      const sc={'completed':'s-completed','partial':'s-partial','missed':'s-missed','bonus':'s-bonus'}[r.status]||'';
+      const dp=r.duration_pct||0,bw=Math.min(100,dp);
+      const bc=isBonus?'#00d4ff':dp>=85?'#22c55e':dp>=50?'#f59e0b':'#ef4444';
       const tr=document.createElement('tr');
+      if(isBonus) tr.style.background='rgba(0,212,255,.03)';
       tr.innerHTML=`<td style="font-weight:600">${r.week}</td>
         <td style="color:var(--muted);font-size:.75rem">${r.plan_date||''}</td>
         <td><span class="spp ${r.sport}">${(r.sport||'').toUpperCase()}</span></td>
         <td style="font-size:.78rem;font-weight:500">${r.session_type||''}</td>
-        <td style="font-size:.75rem">${r.planned_min||0}m<br><span style="color:var(--muted)">${r.planned_zone||''}</span></td>
-        <td style="font-size:.75rem">${r.actual_min>0?r.actual_min+'m':'—'}<br><span style="color:var(--muted)">${r.actual_zone||'—'}</span></td>
-        <td><div style="background:#1a2235;border-radius:4px;height:5px;width:60px"><div style="background:${bc};height:5px;border-radius:4px;width:${bw}%"></div></div><span style="font-size:.68rem;color:${bc}">${dp}%</span></td>
-        <td style="font-weight:700;color:${r.zone_compliant?'#22c55e':r.actual_min>0?'#ef4444':'#64748b'}">${r.actual_min>0?(r.zone_compliant?'✓':'✗'):'—'}</td>
+        <td style="font-size:.75rem">${!isBonus?(r.planned_min||0)+'m<br><span style="color:var(--muted)">'+r.planned_zone+'</span>':'<span style="color:var(--muted)">—</span>'}</td>
+        <td style="font-size:.75rem">${r.actual_min>0?r.actual_min+'m<br><span style="color:var(--muted)">'+(r.actual_zone||'—')+'</span>':'—'}</td>
+        <td>${isBonus?'<span style="color:var(--accent);font-size:.72rem">+BONUS</span>':'<div style="background:#1a2235;border-radius:4px;height:5px;width:60px"><div style="background:'+bc+';height:5px;border-radius:4px;width:'+bw+'%"></div></div><span style="font-size:.68rem;color:'+bc+'">'+dp+'%</span>'}</td>
+        <td style="font-weight:700;color:${r.zone_compliant?'#22c55e':isBonus?'#64748b':r.actual_min>0?'#ef4444':'#64748b'}">${r.actual_min>0?(r.zone_compliant?'✓':isBonus?'—':'✗'):'—'}</td>
         <td><span class="${sc}">${r.status||''}</span></td>`;
       tb.appendChild(tr);
     });
@@ -655,7 +661,6 @@ function buildWellness(){
   const sleepVals=last60.map(d=>d.sleep_hrs||null);
   const rhrVals=last60.map(d=>d.resting_hr||null);
   const hrvBase=last60.map(d=>d.hrv_baseline||null);
-
   new Chart(document.getElementById('hrvChart'),{type:'line',
     data:{labels,datasets:[
       {label:'HRV',data:hrvVals,borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.1)',tension:.3,pointRadius:2,fill:true,spanGaps:true},
@@ -663,37 +668,28 @@ function buildWellness(){
     ]},options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
       scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#1e2d45'}},y:{grid:{color:'#1e2d45'}}}}});
-
   new Chart(document.getElementById('readChart'),{type:'line',
-    data:{labels,datasets:[{
-      label:'Readiness',data:readVals,borderColor:'#22c55e',
-      backgroundColor:(ctx)=>{
-        const g=ctx.chart.ctx.createLinearGradient(0,0,0,200);
-        g.addColorStop(0,'rgba(34,197,94,.3)');g.addColorStop(1,'rgba(34,197,94,.0)');return g;
-      },tension:.3,pointRadius:2,fill:true,spanGaps:true
-    }]},options:{responsive:true,maintainAspectRatio:true,
+    data:{labels,datasets:[{label:'Readiness',data:readVals,borderColor:'#22c55e',
+      backgroundColor:(ctx)=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,200);
+        g.addColorStop(0,'rgba(34,197,94,.3)');g.addColorStop(1,'rgba(34,197,94,.0)');return g;},
+      tension:.3,pointRadius:2,fill:true,spanGaps:true}]},
+    options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
       scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#1e2d45'}},
         y:{min:0,max:100,grid:{color:'#1e2d45'},ticks:{callback:v=>v+'/100'}}}}});
-
   new Chart(document.getElementById('sleepChart'),{type:'bar',
-    data:{labels,datasets:[{
-      label:'Sleep hrs',data:sleepVals,
+    data:{labels,datasets:[{label:'Sleep hrs',data:sleepVals,
       backgroundColor:sleepVals.map(v=>v>=8?'rgba(34,197,94,.7)':v>=7?'rgba(0,212,255,.6)':v>=6?'rgba(245,158,11,.6)':'rgba(239,68,68,.6)'),
-      borderRadius:3,spanGaps:true
-    }]},options:{responsive:true,maintainAspectRatio:true,
+      borderRadius:3,spanGaps:true}]},
+    options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-      scales:{x:{ticks:{maxTicksLimit:10},grid:{display:false}},
-        y:{grid:{color:'#1e2d45'},title:{display:true,text:'Hours'}}}}});
-
+      scales:{x:{ticks:{maxTicksLimit:10},grid:{display:false}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'Hours'}}}}});
   new Chart(document.getElementById('rhrChart'),{type:'line',
-    data:{labels,datasets:[{
-      label:'Resting HR',data:rhrVals,borderColor:'#ff6b35',
-      backgroundColor:'rgba(255,107,53,.1)',tension:.3,pointRadius:2,fill:true,spanGaps:true
-    }]},options:{responsive:true,maintainAspectRatio:true,
+    data:{labels,datasets:[{label:'Resting HR',data:rhrVals,borderColor:'#ff6b35',
+      backgroundColor:'rgba(255,107,53,.1)',tension:.3,pointRadius:2,fill:true,spanGaps:true}]},
+    options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
       scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#1e2d45'}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'bpm'}}}}});
-
   const tb=document.getElementById('wellnessBody');
   [...readinessD].reverse().slice(0,30).forEach(r=>{
     const tr=document.createElement('tr');
@@ -718,7 +714,6 @@ function buildNutrition(){
   const today=new Date().toISOString().slice(0,10);
   const todayNut=nutritionD.find(n=>n.date===today)||nutritionD[0];
   const DAY_COLORS={hard:'#ff6b35',moderate:'#f59e0b',easy:'#22c55e',rest:'#64748b'};
-
   if(todayNut){
     document.getElementById('nutKcal').textContent=todayNut.calories+' kcal';
     document.getElementById('nutDayType').textContent=todayNut.label||todayNut.day_type;
@@ -734,36 +729,27 @@ function buildNutrition(){
           <div class="meal-name">${slot.replace('_',' ').toUpperCase()} · ${meal.name}</div>
           <div class="meal-items">${(meal.items||[]).map(i=>`• ${i}`).join('<br>')}</div>
           ${meal.notes?`<div class="meal-note">💡 ${meal.notes}</div>`:''}
-        </div>`).join('')+
-    '</div>';
+        </div>`).join('')+'</div>';
   }
-
-  // Weekly calorie chart (next 7 days)
   const next7=nutritionD.slice(0,7);
   new Chart(document.getElementById('nutCalChart'),{type:'bar',
-    data:{labels:next7.map(d=>d.weekday||d.date),datasets:[{
-      label:'Target Calories',
+    data:{labels:next7.map(d=>d.weekday||d.date),datasets:[{label:'Target Calories',
       data:next7.map(d=>d.calories),
-      backgroundColor:next7.map(d=>DAY_COLORS[d.day_type]||'#64748b')+'99',
+      backgroundColor:next7.map(d=>(DAY_COLORS[d.day_type]||'#64748b')+'99'),
       borderColor:next7.map(d=>DAY_COLORS[d.day_type]||'#64748b'),
-      borderWidth:1,borderRadius:4,
-    }]},options:{responsive:true,maintainAspectRatio:true,
-      plugins:{legend:{display:false}},
+      borderWidth:1,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},
       scales:{x:{grid:{display:false}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'kcal'}}}}});
-
-  // Macro donut for today
   if(todayNut){
     new Chart(document.getElementById('nutMacroChart'),{type:'doughnut',
       data:{labels:['Carbs','Protein','Fat'],datasets:[{
         data:[todayNut.carbs_g*4,todayNut.protein_g*4,todayNut.fat_g*9],
         backgroundColor:['rgba(245,158,11,.8)','rgba(0,212,255,.8)','rgba(34,197,94,.8)'],
-        borderWidth:2,borderColor:'#111827'
-      }]},options:{responsive:true,maintainAspectRatio:true,
+        borderWidth:2,borderColor:'#111827'}]},
+      options:{responsive:true,maintainAspectRatio:true,
         plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}},
           tooltip:{callbacks:{label:c=>`${c.label}: ${Math.round(c.raw)} kcal`}}}}});
   }
-
-  // 7-day table
   const tb=document.getElementById('nutBody');
   next7.forEach(n=>{
     const tr=document.createElement('tr');
@@ -772,9 +758,7 @@ function buildNutrition(){
       <td style="font-weight:600">${n.weekday}</td>
       <td><span class="nt-${n.day_type}">${n.day_type}</span></td>
       <td style="font-weight:700;color:${dc}">${n.calories}</td>
-      <td>${n.carbs_g}g</td>
-      <td>${n.protein_g}g</td>
-      <td>${n.fat_g}g</td>
+      <td>${n.carbs_g}g</td><td>${n.protein_g}g</td><td>${n.fat_g}g</td>
       <td style="font-size:.72rem;color:var(--muted)">${(n.sessions||[]).join(', ')||'Rest'}</td>`;
     tb.appendChild(tr);
   });
