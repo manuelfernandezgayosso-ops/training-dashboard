@@ -8,14 +8,14 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;900&family=Barlow:wght@300;400;500;600&display=swap');
 :root{
-  --bg:#0a0e1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d45;
-  --accent:#00d4ff;--accent2:#ff6b35;--green:#22c55e;--yellow:#f59e0b;
-  --red:#ef4444;--text:#e2e8f0;--muted:#64748b;
-  --swim:#38bdf8;--bike:#f59e0b;--run:#22c55e;
+  --bg:#f8fafc;--surface:#ffffff;--surface2:#f1f5f9;--border:#e2e8f0;
+  --accent:#0284c7;--accent2:#ea580c;--green:#16a34a;--yellow:#d97706;
+  --red:#dc2626;--text:#0f172a;--muted:#64748b;
+  --swim:#0284c7;--bike:#d97706;--run:#16a34a;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-height:100vh}
-.hdr{background:linear-gradient(135deg,#0a0e1a,#0f1e35,#0a1628);
+.hdr{background:linear-gradient(135deg,#0f172a,#1e3a5f,#0c2340);
   border-bottom:1px solid var(--border);padding:18px 28px;
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 .hdr-brand h1{font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:900;
@@ -143,7 +143,6 @@ tr:hover td{background:rgba(255,255,255,.015)}
       {% endfor %}
     </div>
     <button class="sync-btn" onclick="triggerSync(this)">⟳ Sync Now</button>
-    <button class="sync-btn" id="rebaseBtn" onclick="triggerRebaseline(this)" style="border-color:rgba(245,158,11,.4);color:#f59e0b;background:rgba(245,158,11,.08)">📐 Re-baseline</button>
   </div>
 </div>
 
@@ -421,22 +420,6 @@ tr:hover td{background:rgba(255,255,255,.015)}
     </div>
     {% endfor %}
   </div>
-  <!-- Race Goals & Paces -->
-  <div class="card mb" id="goalsCard">
-    <div class="ct">🎯 Race Goals &amp; Training Paces</div>
-    <div id="goalsContent" style="color:var(--muted);font-size:.82rem">Loading goals...</div>
-  </div>
-
-  <!-- Rebaseline status -->
-  <div class="card mb" style="border-color:rgba(245,158,11,.2)">
-    <div class="ct">📐 Plan Re-baselining</div>
-    <div style="font-size:.82rem;line-height:1.8;color:var(--muted)">
-      The plan auto-rebaselines <strong style="color:var(--text)">weekly</strong> based on your current fitness (CTL), wellness (HRV), and progress.<br>
-      Hit <strong style="color:#f59e0b">Re-baseline</strong> at the top to force an update now — the plan will adjust within ~60 seconds.<br>
-      Last rebaseline: <span id="lastRebaseline" style="color:var(--text)">checking...</span>
-    </div>
-  </div>
-
   <div class="card">
     <div class="ct">➕ Adding Future Races</div>
     <div style="font-size:.85rem;line-height:1.8;color:var(--muted)">
@@ -454,7 +437,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 
 <script>
 Chart.defaults.color='#64748b';
-Chart.defaults.borderColor='#1e2d45';
+Chart.defaults.borderColor='#e2e8f0';
 Chart.defaults.font.family="'Barlow',sans-serif";
 const ZC={'Zone 1':'rgba(34,197,94,.8)','Zone 2':'rgba(34,197,94,.5)',
   'Zone X':'rgba(239,68,68,.8)','Zone 3':'rgba(245,158,11,.7)',
@@ -476,53 +459,10 @@ function triggerSync(btn){
     .catch(()=>{btn.textContent='✗ Error';btn.classList.remove('syncing');btn.disabled=false;});
 }
 
-function triggerRebaseline(btn){
-  btn.textContent='⟳ Rebaselining...';btn.style.opacity='.6';btn.disabled=true;
-  fetch('/api/rebaseline',{method:'POST'})
-    .then(r=>r.json())
-    .then(()=>{
-      btn.textContent='✓ Done! Reloading...';
-      setTimeout(()=>location.reload(),8000);
-    })
-    .catch(()=>{btn.textContent='✗ Error';btn.style.opacity='1';btn.disabled=false;});
-}
-
-function buildGoals(goals){
-  // Update last rebaseline timestamp
-  fetch('/api/rebaseline-status').then(r=>r.json()).then(d=>{
-    const el=document.getElementById('lastRebaseline');
-    if(el) el.textContent=d.last_rebaseline?new Date(d.last_rebaseline).toLocaleString():'Never (syncs tonight)';
-  }).catch(()=>{});
-
-  const el=document.getElementById('goalsContent');
-  if(!el||!goals||!goals.half_marathon) return;
-  const hm=goals.half_marathon, im=goals.im703;
-  el.innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
-      <div style="background:var(--surface2);border-radius:10px;padding:14px">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--accent);margin-bottom:10px">🏃 Half Marathon — ${hm.target_time}</div>
-        <div style="font-size:.75rem;line-height:2">
-          <div><span style="color:var(--muted)">Race pace</span> <strong style="color:var(--text);margin-left:8px">${hm.race_pace}</strong></div>
-          <div><span style="color:var(--muted)">Zone 2 easy</span> <strong style="color:#22c55e;margin-left:8px">${hm.zones.zone2}</strong></div>
-          <div><span style="color:var(--muted)">Zone 3 tempo</span> <strong style="color:#f59e0b;margin-left:8px">${hm.zones.zone3}</strong></div>
-          <div><span style="color:var(--muted)">Zone 4 threshold</span> <strong style="color:#ff6b35;margin-left:8px">${hm.zones.zone4}</strong></div>
-        </div>
-      </div>
-      <div style="background:var(--surface2);border-radius:10px;padding:14px">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;color:var(--accent2);margin-bottom:10px">🏁 Ironman 70.3 — ${im.projected_total}</div>
-        <div style="font-size:.75rem;line-height:2">
-          <div><span style="color:var(--muted)">🏊 Swim ${im.swim.target_time}</span> <strong style="color:var(--accent);margin-left:8px">${im.swim.race_pace}</strong> race · <span style="color:#22c55e">${im.swim.zones.zone2}</span> easy</div>
-          <div><span style="color:var(--muted)">🚴 Bike ${im.bike.target_time}</span> <strong style="color:var(--accent);margin-left:8px">${im.bike.race_speed}</strong> race · <span style="color:#22c55e">${im.bike.zones.zone2}</span> easy</div>
-          <div><span style="color:var(--muted)">🏃 Run ${im.run.target_time}</span> <strong style="color:var(--accent);margin-left:8px">${im.run.race_pace}</strong> race · <span style="color:#22c55e">${im.run.zones.zone2}</span> easy</div>
-        </div>
-      </div>
-    </div>`;
-}
-
 async function loadAll(){
   const safe=url=>fetch(url).then(r=>r.json()).catch(()=>[]);
   const safeObj=url=>fetch(url).then(r=>r.json()).catch(()=>({}));
-  const [a,f,p,pr,w,pf,n,wd,rd,nd,gl]=await Promise.all([
+  const [a,f,p,pr,w,pf,n,wd,rd,nd]=await Promise.all([
     safe('/api/activities'),
     safe('/api/fitness'),
     safe('/api/plan'),
@@ -533,13 +473,12 @@ async function loadAll(){
     safe('/api/wellness'),
     safe('/api/readiness'),
     safe('/api/nutrition'),
-    safeObj('/api/goals'),
   ]);
   acts=a;fitD=f;planD=p;progressD=pr;weeklyD=w;prof=pf;notes=n;
   wellnessD=Array.isArray(wd)?wd:[];
   readinessD=Array.isArray(rd)?rd:[];
   nutritionD=Array.isArray(nd)?nd:[];
-  buildOverview();buildProgress();buildPlan();buildWellness();buildNutrition();buildGoals(gl);
+  buildOverview();buildProgress();buildPlan();buildWellness();buildNutrition();
 }
 
 // ── Overview ─────────────────────────────────────────────────
@@ -552,12 +491,12 @@ function buildOverview(){
         {label:'Form (TSB)',data:fitD.map(d=>d.TSB),borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.08)',tension:.4,pointRadius:0,fill:true},
       ]},options:{responsive:true,maintainAspectRatio:true,
         plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-        scales:{x:{ticks:{maxTicksLimit:8},grid:{color:'#1e2d45'}},y:{grid:{color:'#1e2d45'}}}}});
+        scales:{x:{ticks:{maxTicksLimit:8},grid:{color:'#e2e8f0'}},y:{grid:{color:'#e2e8f0'}}}}});
   }
   const zd=prof.zone_distribution_pct||{};
   const lbs=Object.keys(zd),vals=Object.values(zd),cols=lbs.map(z=>ZC[z]||'rgba(100,116,139,.5)');
   new Chart(document.getElementById('zoneChart'),{type:'doughnut',
-    data:{labels:lbs,datasets:[{data:vals,backgroundColor:cols,borderWidth:2,borderColor:'#111827'}]},
+    data:{labels:lbs,datasets:[{data:vals,backgroundColor:cols,borderWidth:2,borderColor:'#ffffff'}]},
     options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}},
         tooltip:{callbacks:{label:c=>` ${c.label}: ${c.raw}%`}}}}});
@@ -581,13 +520,13 @@ function buildOverview(){
         {label:'XC Ski',data:wks.map(w=>+(bw[w].xc_ski||0).toFixed(1)),backgroundColor:'rgba(56,189,248,.4)',stack:'a'},
       ]},options:{responsive:true,maintainAspectRatio:true,
         plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-        scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:'#1e2d45'},title:{display:true,text:'Hours'}}}}});
+        scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:'#e2e8f0'},title:{display:true,text:'Hours'}}}}});
   }
   const b=prof.sport_breakdown_pct||{swim:0,bike:0,run:0};
   new Chart(document.getElementById('sportChart'),{type:'doughnut',
     data:{labels:['Swim','Bike','Run'],datasets:[{data:[b.swim||0,b.bike||0,b.run||0],
       backgroundColor:['rgba(56,189,248,.8)','rgba(245,158,11,.8)','rgba(34,197,94,.8)'],
-      borderWidth:2,borderColor:'#111827'}]},
+      borderWidth:2,borderColor:'#ffffff'}]},
     options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}},
         tooltip:{callbacks:{label:c=>` ${c.label}: ${c.raw}%`}}}}});
@@ -614,8 +553,7 @@ function buildOverview(){
 function buildProgress(){
   if(!progressD.length) return;
   const weeks=[...new Set(progressD.map(d=>d.week))].sort((a,b)=>a-b);
-  const today=new Date().toISOString().slice(0,10);
-  const curWeek=progressD.reduce((best,d)=>{if(d.plan_date&&d.plan_date<=today)return d.week>best?d.week:best;return best;},weeks[0]);
+  const curWeek=weeks[weeks.length-1];
   const cwd=progressD.filter(d=>d.week==curWeek&&!d.is_bonus);
   const planned=cwd.filter(d=>d.sport!=='race').length;
   const completed=cwd.filter(d=>d.status==='completed').length;
@@ -635,7 +573,7 @@ function buildProgress(){
   document.getElementById('wkVol').textContent=(cws.actual_hours||0)+'h';
   document.getElementById('wkVolSub').textContent=`of ${cws.planned_hours||0}h planned`;
   const actDates=[...new Set(progressD.filter(d=>d.actual_date).map(d=>d.actual_date))].sort().reverse();
-  let streak=0;let check=today;
+  let streak=0;const today=new Date().toISOString().slice(0,10);let check=today;
   for(const d of actDates){if(d===check){streak++;const dd=new Date(check);dd.setDate(dd.getDate()-1);check=dd.toISOString().slice(0,10);}else break;}
   document.getElementById('streak').textContent=streak;
   const cn=notes.find(n=>n.week==curWeek);
@@ -647,14 +585,14 @@ function buildProgress(){
         {label:'Actual', data:weeklyD.map(d=>d.actual_hours), backgroundColor:'rgba(0,212,255,.6)',borderRadius:4},
       ]},options:{responsive:true,maintainAspectRatio:true,
         plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-        scales:{x:{grid:{display:false}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'Hours'}}}}});
+        scales:{x:{grid:{display:false}},y:{grid:{color:'#e2e8f0'},title:{display:true,text:'Hours'}}}}});
     new Chart(document.getElementById('compChart'),{type:'line',
       data:{labels:weeklyD.map(d=>`Wk ${d.week}`),datasets:[
         {label:'Completion %',data:weeklyD.map(d=>d.completion_pct),borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',tension:.3,pointRadius:4,fill:true},
         {label:'Zone Comply %',data:weeklyD.map(d=>d.zone_compliance_pct),borderColor:'#00d4ff',backgroundColor:'transparent',tension:.3,pointRadius:4,borderDash:[4,2]},
       ]},options:{responsive:true,maintainAspectRatio:true,
         plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-        scales:{x:{grid:{display:false}},y:{min:0,max:110,grid:{color:'#1e2d45'},ticks:{callback:v=>v+'%'}}}}});
+        scales:{x:{grid:{display:false}},y:{min:0,max:110,grid:{color:'#e2e8f0'},ticks:{callback:v=>v+'%'}}}}});
   }
   const wf=document.getElementById('progFilters'),tb=document.getElementById('progBody');
   const mkB=(l,fn)=>{const b=document.createElement('button');b.className='wb';b.textContent=l;b.onclick=fn;wf.appendChild(b);return b;};
@@ -676,7 +614,7 @@ function buildProgress(){
         <td style="font-size:.78rem;font-weight:500">${r.session_type||''}</td>
         <td style="font-size:.75rem">${!isBonus?(r.planned_min||0)+'m<br><span style="color:var(--muted)">'+r.planned_zone+'</span>':'<span style="color:var(--muted)">—</span>'}</td>
         <td style="font-size:.75rem">${r.actual_min>0?r.actual_min+'m<br><span style="color:var(--muted)">'+(r.actual_zone||'—')+'</span>':'—'}</td>
-        <td>${isBonus?'<span style="color:var(--accent);font-size:.72rem">+BONUS</span>':'<div style="background:#1a2235;border-radius:4px;height:5px;width:60px"><div style="background:'+bc+';height:5px;border-radius:4px;width:'+bw+'%"></div></div><span style="font-size:.68rem;color:'+bc+'">'+dp+'%</span>'}</td>
+        <td>${isBonus?'<span style="color:var(--accent);font-size:.72rem">+BONUS</span>':'<div style="background:#f1f5f9;border-radius:4px;height:5px;width:60px"><div style="background:'+bc+';height:5px;border-radius:4px;width:'+bw+'%"></div></div><span style="font-size:.68rem;color:'+bc+'">'+dp+'%</span>'}</td>
         <td style="font-weight:700;color:${r.zone_compliant?'#22c55e':isBonus?'#64748b':r.actual_min>0?'#ef4444':'#64748b'}">${r.actual_min>0?(r.zone_compliant?'✓':isBonus?'—':'✗'):'—'}</td>
         <td><span class="${sc}">${r.status||''}</span></td>`;
       tb.appendChild(tr);
@@ -729,7 +667,7 @@ function buildWellness(){
       {label:'Baseline',data:hrvBase,borderColor:'#64748b',backgroundColor:'transparent',tension:.3,pointRadius:0,borderDash:[4,2],spanGaps:true},
     ]},options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-      scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#1e2d45'}},y:{grid:{color:'#1e2d45'}}}}});
+      scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#e2e8f0'}},y:{grid:{color:'#e2e8f0'}}}}});
   new Chart(document.getElementById('readChart'),{type:'line',
     data:{labels,datasets:[{label:'Readiness',data:readVals,borderColor:'#22c55e',
       backgroundColor:(ctx)=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,200);
@@ -737,21 +675,21 @@ function buildWellness(){
       tension:.3,pointRadius:2,fill:true,spanGaps:true}]},
     options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-      scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#1e2d45'}},
-        y:{min:0,max:100,grid:{color:'#1e2d45'},ticks:{callback:v=>v+'/100'}}}}});
+      scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#e2e8f0'}},
+        y:{min:0,max:100,grid:{color:'#e2e8f0'},ticks:{callback:v=>v+'/100'}}}}});
   new Chart(document.getElementById('sleepChart'),{type:'bar',
     data:{labels,datasets:[{label:'Sleep hrs',data:sleepVals,
       backgroundColor:sleepVals.map(v=>v>=8?'rgba(34,197,94,.7)':v>=7?'rgba(0,212,255,.6)':v>=6?'rgba(245,158,11,.6)':'rgba(239,68,68,.6)'),
       borderRadius:3,spanGaps:true}]},
     options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-      scales:{x:{ticks:{maxTicksLimit:10},grid:{display:false}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'Hours'}}}}});
+      scales:{x:{ticks:{maxTicksLimit:10},grid:{display:false}},y:{grid:{color:'#e2e8f0'},title:{display:true,text:'Hours'}}}}});
   new Chart(document.getElementById('rhrChart'),{type:'line',
     data:{labels,datasets:[{label:'Resting HR',data:rhrVals,borderColor:'#ff6b35',
       backgroundColor:'rgba(255,107,53,.1)',tension:.3,pointRadius:2,fill:true,spanGaps:true}]},
     options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}}},
-      scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#1e2d45'}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'bpm'}}}}});
+      scales:{x:{ticks:{maxTicksLimit:10},grid:{color:'#e2e8f0'}},y:{grid:{color:'#e2e8f0'},title:{display:true,text:'bpm'}}}}});
   const tb=document.getElementById('wellnessBody');
   [...readinessD].reverse().slice(0,30).forEach(r=>{
     const tr=document.createElement('tr');
@@ -801,13 +739,13 @@ function buildNutrition(){
       borderColor:next7.map(d=>DAY_COLORS[d.day_type]||'#64748b'),
       borderWidth:1,borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},
-      scales:{x:{grid:{display:false}},y:{grid:{color:'#1e2d45'},title:{display:true,text:'kcal'}}}}});
+      scales:{x:{grid:{display:false}},y:{grid:{color:'#e2e8f0'},title:{display:true,text:'kcal'}}}}});
   if(todayNut){
     new Chart(document.getElementById('nutMacroChart'),{type:'doughnut',
       data:{labels:['Carbs','Protein','Fat'],datasets:[{
         data:[todayNut.carbs_g*4,todayNut.protein_g*4,todayNut.fat_g*9],
         backgroundColor:['rgba(245,158,11,.8)','rgba(0,212,255,.8)','rgba(34,197,94,.8)'],
-        borderWidth:2,borderColor:'#111827'}]},
+        borderWidth:2,borderColor:'#ffffff'}]},
       options:{responsive:true,maintainAspectRatio:true,
         plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:8}},
           tooltip:{callbacks:{label:c=>`${c.label}: ${Math.round(c.raw)} kcal`}}}}});
