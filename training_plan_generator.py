@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 """
-Training Plan Generator - 18-Week Dual-Race Plan
-Race 1: Ironman 70.3  - June 28, 2026
-Race 2: Full Marathon - October 4, 2026
+18-Week Dual-Race Training Plan Generator
+Race 1 (A): Ironman 70.3 — June 28, 2026  (Weeks 1-4)
+Race 2 (B): Full Marathon — October 4, 2026 (Weeks 7-18)
 
-Structure:
-  Weeks 1-4   : 70.3 Peak -> Taper -> Race (Jun 28)
-    Weeks 5-6   : Post-triathlon recovery
-      Weeks 7-18  : Marathon build (run focus, bike/gym cross-training) -> Race (Oct 4)
-
-      Science base: Matt Fitzgerald 80/20 method
-                    Pfitzinger marathon periodization
-                    Volume scale: set via VOLUME_PROFILE env var
-                    """
+Method: Matt Fitzgerald 80/20 + Pfitzinger marathon periodization
+Usage: python3 training_plan_generator.py
+"""
 
 import json, os
 from datetime import datetime, timedelta, date
@@ -24,244 +18,370 @@ from rich.panel import Panel
 from rich.table import Table
 
 load_dotenv()
-console = Console()
 
+console = Console()
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "~/Documents/training_data")).expanduser()
-DATA_DIR   = OUTPUT_DIR / "data"
+DATA_DIR = OUTPUT_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-A_RACE  = date(2026, 6, 28)   # Ironman 70.3
-M_RACE  = date(2026, 10, 4)   # Full Marathon
-TODAY   = date.today()
+A_RACE = date(2026, 6, 28)   # Ironman 70.3
+M_RACE = date(2026, 10, 4)   # Full Marathon
+TODAY = date.today()
 
 VOLUME_PROFILE = os.getenv("VOLUME_PROFILE", "high")
-VOLUME_SCALE   = {"moderate": 1.0, "aggressive": 1.25, "high": 1.50}.get(VOLUME_PROFILE, 1.50)
+VOLUME_SCALE = {"moderate": 1.0, "aggressive": 1.25, "high": 1.50}.get(VOLUME_PROFILE, 1.50)
 
 PHASES = [
-        (1,  "Peak",      0.85, "Final 70.3 sharpener. Swim + bike at race power. Short race-pace run."),
-        (2,  "Taper",     0.55, "Volume drops 45%. Two quality sessions. Get fresh."),
-        (3,  "Taper",     0.35, "Race week. Short activations only. Prep gear, sleep, nutrition."),
-        (4,  "70.3 Race", 0.20, "RACE WEEK - Ironman 70.3 June 28. Light movement until race day."),
-        (5,  "Recovery",  0.25, "Full recovery. Walk, easy swim, gentle spin. Zero intensity."),
-        (6,  "Recovery",  0.45, "Easy running returns. HR Zone 1-2 only. Assess and absorb."),
-        (7,  "M-Base",    0.55, "Marathon base begins. Running focus. Bike + gym as cross-training."),
-        (8,  "M-Base",    0.65, "Build weekly run mileage. Zone 2 long run to 16km."),
-        (9,  "M-Base",    0.75, "Long run to 19km. Gym 2x/week for leg strength and injury prevention."),
-        (10, "M-Base",    0.55, "Recovery week. Adapt and absorb before building intensity."),
-        (11, "M-Build",   0.80, "Tempo runs begin. Long run to 22km. Bike 1x/week cross-training."),
-        (12, "M-Build",   0.90, "Marathon pace segments in long run. Weekly mileage peaks."),
-        (13, "M-Build",   1.00, "Peak run volume. Long run 26km. Gym + bike maintain aerobic base."),
-        (14, "M-Build",   0.65, "Recovery week. Flush the legs before final peak block."),
-        (15, "M-Peak",    1.00, "Highest marathon TSS. Long run 28-30km."),
-        (16, "M-Peak",    1.05, "Race simulation long run with marathon pace final 10km."),
-        (17, "M-Taper",   0.55, "Volume drops 45%. Keep 2 quality runs. Legs freshen."),
-        (18, "M-Taper",   0.25, "RACE WEEK - Full Marathon October 4. Shakeouts only."),
+    (1,  "Peak",      0.85, "Final 70.3 sharpener — maintain fitness, reduce volume 15%. Key: swim/bike/run quality sessions."),
+    (2,  "Taper",     0.55, "Volume drops 45%. Protect race fitness. Short sharp intervals, no new stress."),
+    (3,  "Taper",     0.35, "Race week — minimal volume, stay sharp. Trust your training."),
+    (4,  "70.3 Race", 0.20, "RACE WEEK — Ironman 70.3 June 28. Minimal training, race Sunday."),
+    (5,  "Recovery",  0.25, "Full recovery. Walk/easy swim only. No running stress. Listen to body."),
+    (6,  "Recovery",  0.45, "Easy running returns — Zone 1-2 only. Begin marathon base transition."),
+    (7,  "M-Base",    0.55, "Marathon base begins — 80% easy Zone 2. Aerobic foundation build."),
+    (8,  "M-Base",    0.65, "Build weekly run mileage — long run to 16km. Stay in Zone 2."),
+    (9,  "M-Base",    0.75, "Long run to 19km. Strength work. No intensity above Zone 2."),
+    (10, "M-Base",    0.55, "Recovery week — drop 25-30% volume. Body absorbs adaptation."),
+    (11, "M-Build",   0.80, "Tempo runs begin — 20 min Zone 3. Lactate threshold development."),
+    (12, "M-Build",   0.90, "Marathon pace segments — 3x10 min at 4:44/km. Weekly mileage up."),
+    (13, "M-Build",   1.00, "Peak run volume — long run 26km. Race pace confidence building."),
+    (14, "M-Build",   0.65, "Recovery week — consolidate fitness gains before peak block."),
+    (15, "M-Peak",    1.00, "Highest marathon TSS — long run 29km with race pace miles."),
+    (16, "M-Peak",    1.05, "Race simulation long run — 32km at progressive effort. Peak fitness."),
+    (17, "M-Taper",   0.55, "Volume drops 45% — keep intensity. Fresh legs, sharp fitness."),
+    (18, "M-Taper",   0.25, "RACE WEEK — Full Marathon October 4. Trust the process."),
 ]
 
+# ── WEEKLY TEMPLATES ──────────────────────────────────────────────────────────
+
 PEAK_70_3 = {
-        "Mon": [{"sport":"swim", "min":50, "zone":"Zone 2-3", "type":"Race Prep Swim",
-                              "desc":"2,000m. Include 4x100m at race pace (Z3-4). Get comfortable at 70.3 effort."}],
-        "Tue": [{"sport":"run",  "min":55, "zone":"Zone 3-4", "type":"Race Pace Run",
-                              "desc":"10 min Z1, 4x10 min at 70.3 run target pace (Z2-3), jog 90 sec between, 5 min cool."}],
-        "Wed": [{"sport":"swim", "min":45, "zone":"Zone 2",   "type":"Aerobic Swim",
-                              "desc":"1,800m easy. Drill focus + build sets. Keep it fluid, not hard."},
-                            {"sport":"bike", "min":75, "zone":"Zone 3",   "type":"Bike Intervals",
-                                          "desc":"15 min warm-up, 3x12 min Zone 3 at race power, 3 min easy between, 10 min cool."}],
-        "Thu": [{"sport":"run",  "min":35, "zone":"Zone 1",   "type":"Recovery Run",
-                              "desc":"Very easy. Flush the legs from Tuesday. HR Zone 1 only."}],
-        "Fri": None,
-        "Sat": [{"sport":"swim", "min":55, "zone":"Zone 2-3", "type":"Open Water Sim Swim",
-                              "desc":"2,500-3,000m. Simulate 70.3 swim. Sighting every 10 strokes. No walls."},
-                            {"sport":"bike", "min":150,"zone":"Zone 2-3", "type":"Race Simulation Brick",
-                                          "desc":"2h30 at 70.3 target power/HR, T2 transition, 30-min run at race pace. Full nutrition plan."}],
-        "Sun": [{"sport":"run",  "min":65, "zone":"Zone 2",   "type":"Long Run",
-                              "desc":"Easy aerobic long run. Tired legs from Saturday are intentional. Mental toughness."}],
+    "Mon": None,  # Rest
+    "Tue": [
+        {"sport": "Swim", "min": 45, "zone": "Z2-Z4", "type": "Quality",
+         "desc": "1,800m — 400m easy, 6x100m Z4, 400m Z2 cooldown"},
+        {"sport": "Run",  "min": 35, "zone": "Z2-Z3", "type": "Tempo",
+         "desc": "Easy 10 min warm-up, 15 min tempo Z3 (4:44/km target), 10 min cool-down"},
+    ],
+    "Wed": [
+        {"sport": "Bike", "min": 75, "zone": "Z2-Z4", "type": "Intervals",
+         "desc": "20 min Z2 warm-up, 4x8 min Z4 @ race pace, 2 min recovery, 10 min Z2 cool-down"},
+    ],
+    "Thu": [
+        {"sport": "Swim", "min": 40, "zone": "Z2",    "type": "Easy",
+         "desc": "1,500m steady Z2 — focus on form, bilateral breathing"},
+        {"sport": "Run",  "min": 30, "zone": "Z2",    "type": "Easy",
+         "desc": "Easy Zone 2 run — keep HR conversational"},
+    ],
+    "Fri": [
+        {"sport": "Bike", "min": 40, "zone": "Z2",    "type": "Easy",
+         "desc": "Easy spin — flush legs, stay aerobic Z2"},
+    ],
+    "Sat": [
+        {"sport": "Bike", "min": 90, "zone": "Z2-Z3", "type": "Long",
+         "desc": "70km moderate ride — 75% Z2, 25% Z3 race effort. Brick optional."},
+        {"sport": "Run",  "min": 20, "zone": "Z2",    "type": "Brick",
+         "desc": "Transition run — 4km easy off the bike to practice T2 legs"},
+    ],
+    "Sun": [
+        {"sport": "Run",  "min": 60, "zone": "Z2",    "type": "Long",
+         "desc": "12-14km long run — comfortable Z2 pace, never breathless"},
+    ],
 }
 
 TAPER_70_3 = {
-        "Mon": [{"sport":"swim", "min":30, "zone":"Zone 2",   "type":"Easy Swim",
-                              "desc":"1,200m easy. Keep the feel for water without taxing the body."}],
-        "Tue": [{"sport":"run",  "min":30, "zone":"Zone 2",   "type":"Sharpener Run",
-                              "desc":"20 min easy + 4x30 sec race pace strides. Keep legs sharp."}],
-        "Wed": [{"sport":"swim", "min":25, "zone":"Zone 2-3", "type":"Race Prep Swim",
-                              "desc":"1,000m. 400m easy, 4x100m race pace, 200m easy."},
-                            {"sport":"bike", "min":40, "zone":"Zone 2",   "type":"Easy Spin",
-                                          "desc":"Easy spin. Feel the bike. No efforts. Just move."}],
-        "Thu": None,
-        "Fri": [{"sport":"run",  "min":20, "zone":"Zone 1",   "type":"Shakeout Run",
-                              "desc":"Very easy 20 min. Loosen up. Stop if anything feels off."}],
-        "Sat": [{"sport":"swim", "min":15, "zone":"Zone 1",   "type":"Pre-Race Swim",
-                              "desc":"Easy 400m. Feel the water. Zero hard efforts."},
-                            {"sport":"bike", "min":15, "zone":"Zone 1",   "type":"Bike Check",
-                                          "desc":"15 min easy spin. Check bike and transitions. Lay out gear tonight."}],
-        "Sun": None,
+    "Mon": None,
+    "Tue": [
+        {"sport": "Swim", "min": 30, "zone": "Z2-Z4", "type": "Sharp",
+         "desc": "1,000m — 200m easy, 4x100m Z4, 200m cool-down. Stay sharp, cut volume."},
+        {"sport": "Run",  "min": 20, "zone": "Z2-Z3", "type": "Easy",
+         "desc": "Easy jog with 4x30s strides at race pace. Keep legs fresh."},
+    ],
+    "Wed": [
+        {"sport": "Bike", "min": 45, "zone": "Z2-Z3", "type": "Race Prep",
+         "desc": "Comfortable Z2 spin with 3x5 min at race effort. Shake out the legs."},
+    ],
+    "Thu": [
+        {"sport": "Swim", "min": 25, "zone": "Z2",    "type": "Easy",
+         "desc": "800m easy — form focus only. No intensity."},
+    ],
+    "Fri": [
+        {"sport": "Run",  "min": 15, "zone": "Z2",    "type": "Shakeout",
+         "desc": "Short easy 3km shakeout — keep legs loose, no effort"},
+        {"sport": "Bike", "min": 20, "zone": "Z1-Z2", "type": "Shakeout",
+         "desc": "10 min easy spin — just to move. Check equipment."},
+    ],
+    "Sat": None,  # Pre-race rest
+    "Sun": [
+        {"sport": "Race", "min": 322, "zone": "Race",  "type": "A-Race",
+         "desc": "IRONMAN 70.3 — Race Day! Swim 1.9km / Bike 90km / Run 21.1km"},
+    ],
 }
 
 RECOVERY = {
-        "Mon": None,
-        "Tue": [{"sport":"walk/swim", "min":30, "zone":"Zone 1", "type":"Easy Movement",
-                              "desc":"Walk or easy swim. Flush the legs. Zero running or hard effort."}],
-        "Wed": [{"sport":"bike", "min":40, "zone":"Zone 1", "type":"Easy Spin",
-                              "desc":"Very easy spin. Active recovery only. No power targets."}],
-        "Thu": None,
-        "Fri": [{"sport":"swim", "min":30, "zone":"Zone 1", "type":"Easy Swim",
-                              "desc":"1,000m easy. Loosen the shoulders and enjoy the water."}],
-        "Sat": [{"sport":"run", "min":25, "zone":"Zone 1", "type":"Easy Jog",
-                              "desc":"First easy jog post-race. If legs feel heavy, walk. HR Zone 1 only."}],
-        "Sun": None,
+    "Mon": None,
+    "Tue": [
+        {"sport": "Walk/Swim", "min": 30, "zone": "Z1", "type": "Active Recovery",
+         "desc": "Easy walk or gentle swim — no running stress, flush the legs"},
+    ],
+    "Wed": [
+        {"sport": "Bike",  "min": 40, "zone": "Z1-Z2", "type": "Easy Spin",
+         "desc": "Very easy spin — cadence 90+, HR under 130. Active recovery only."},
+    ],
+    "Thu": [
+        {"sport": "Swim",  "min": 30, "zone": "Z1-Z2", "type": "Easy",
+         "desc": "1,000m easy swim — no intensity. Full body recovery."},
+    ],
+    "Fri": None,
+    "Sat": [
+        {"sport": "Run",   "min": 35, "zone": "Z1-Z2", "type": "Easy Return",
+         "desc": "First easy run back — stop if anything hurts. 5-6km maximum."},
+    ],
+    "Sun": [
+        {"sport": "Bike",  "min": 60, "zone": "Z2",    "type": "Aerobic",
+         "desc": "Moderate aerobic ride — rebuild base, enjoy the miles"},
+    ],
 }
 
 MARATHON_BASE = {
-        "Mon": [{"sport":"gym", "min":50, "zone":"-", "type":"Strength Session",
-                              "desc":"Lower body: squats, lunges, single-leg RDL, calf raises, hip work. 2-3 sets x 10-12 reps. A 3:20 marathon requires injury-free legs."}],
-        "Tue": [{"sport":"run", "min":55, "zone":"Zone 2", "type":"Easy Run",
-                              "desc":"Conversational pace ~5:45-6:00/km. The 80% of 80/20 - base miles build the engine for 3:20."}],
-        "Wed": [{"sport":"bike", "min":60, "zone":"Zone 2", "type":"Cross-Training Ride",
-                              "desc":"Easy aerobic spin. Maintains cardiovascular base without leg fatigue. 90+ RPM cadence."}],
-        "Thu": [{"sport":"run", "min":50, "zone":"Zone 2", "type":"Easy Run",
-                              "desc":"Easy Zone 2 ~5:45-6:00/km. Flush from Tuesday. No intensity - save it for Saturday."}],
-        "Fri": None,
-        "Sat": [{"sport":"run", "min":90, "zone":"Zone 2", "type":"Long Run",
-                              "desc":"Easy long run building to 18-20km. Eat and drink every 20 min - race nutrition is a skill."}],
-        "Sun": [{"sport":"run", "min":30, "zone":"Zone 1", "type":"Recovery Run",
-                              "desc":"Very easy 30 min. Active recovery after the long run. Walk breaks are fine."}],
+    "Mon": None,
+    "Tue": [
+        {"sport": "Run",  "min": 50, "zone": "Z2",    "type": "Easy",
+         "desc": "Easy Zone 2 — conversational pace, build aerobic base"},
+        {"sport": "Gym",  "min": 30, "zone": "N/A",   "type": "Strength",
+         "desc": "Lower body: squats 3x10, lunges 3x12, hip bridges 3x15, calf raises 3x20"},
+    ],
+    "Wed": [
+        {"sport": "Bike", "min": 60, "zone": "Z2",    "type": "Cross-Train",
+         "desc": "Easy aerobic ride — maintain bike fitness without run impact"},
+    ],
+    "Thu": [
+        {"sport": "Run",  "min": 45, "zone": "Z2",    "type": "Easy",
+         "desc": "Zone 2 easy run — HR under 145, no pressure"},
+    ],
+    "Fri": [
+        {"sport": "Swim", "min": 40, "zone": "Z1-Z2", "type": "Active Recovery",
+         "desc": "Easy swim — loosen up for Saturday long run"},
+    ],
+    "Sat": [
+        {"sport": "Run",  "min": 90, "zone": "Z2",    "type": "Long",
+         "desc": "Long run — Zone 2 throughout, walk breaks fine, finish strong not fast"},
+    ],
+    "Sun": [
+        {"sport": "Bike", "min": 75, "zone": "Z2",    "type": "Easy",
+         "desc": "Easy Sunday ride — aerobic cross-training, active recovery from long run"},
+    ],
 }
 
 MARATHON_BUILD = {
-        "Mon": [{"sport":"gym", "min":50, "zone":"-", "type":"Strength Session",
-                              "desc":"Bulgarian split squats, step-ups, hip thrusts, planks, dead bugs. Protect hip flexors and knees for high mileage weeks."}],
-        "Tue": [{"sport":"run", "min":60, "zone":"Zone 3-4", "type":"Tempo Run",
-                              "desc":"10 min Z1 warm-up, 3x12 min at 3:20 marathon pace (4:44/km, Zone 3), 90 sec easy between, 10 min cool-down."}],
-        "Wed": [{"sport":"bike", "min":75, "zone":"Zone 2-3", "type":"Cross-Training Ride",
-                              "desc":"Zone 2 base + 2x10 min at Zone 3. Keeps aerobic base without adding run impact to heavy legs."}],
-        "Thu": [{"sport":"run", "min":50, "zone":"Zone 2", "type":"Easy Run",
-                              "desc":"Easy recovery run after Tuesday's tempo. HR Zone 2. Quality only lands if recovery is real."}],
-        "Fri": None,
-        "Sat": [{"sport":"run", "min":110, "zone":"Zone 2-3", "type":"Long Run",
-                              "desc":"Build to 22-26km. First 80% easy Zone 2. Final 20% at 3:20 marathon pace (4:44/km)."}],
-        "Sun": [{"sport":"run", "min":35, "zone":"Zone 1", "type":"Recovery Run",
-                              "desc":"Very easy 35 min. Flush Sunday legs. Walk/run is fine."}],
+    "Mon": None,
+    "Tue": [
+        {"sport": "Run",  "min": 55, "zone": "Z2-Z3", "type": "Tempo",
+         "desc": "Warm-up 15 min Z2, 3x12 min at 3:20 marathon pace (4:44/km, Zone 3), cool-down 10 min"},
+        {"sport": "Gym",  "min": 30, "zone": "N/A",   "type": "Strength",
+         "desc": "Power work: single-leg squats 3x8, deadlifts 3x8, box jumps 3x8, hip flexor work"},
+    ],
+    "Wed": [
+        {"sport": "Bike", "min": 60, "zone": "Z2",    "type": "Cross-Train",
+         "desc": "Aerobic bike — active recovery, maintain cardio without run stress"},
+    ],
+    "Thu": [
+        {"sport": "Run",  "min": 50, "zone": "Z2-Z3", "type": "Medium-Long",
+         "desc": "Medium long run — 12-14km, 80% Z2 with last 4km at marathon pace (4:44/km)"},
+    ],
+    "Fri": [
+        {"sport": "Swim", "min": 35, "zone": "Z1-Z2", "type": "Recovery",
+         "desc": "Easy swim — shake out pre-long run, no intensity"},
+    ],
+    "Sat": [
+        {"sport": "Run",  "min": 110, "zone": "Z2-Z3", "type": "Long",
+         "desc": "Long run — first 18km Zone 2 easy, final 6km progressive to marathon pace"},
+    ],
+    "Sun": [
+        {"sport": "Bike", "min": 75, "zone": "Z2",    "type": "Recovery Ride",
+         "desc": "Easy recovery spin — flush legs post long run, stay aerobic"},
+    ],
 }
 
 MARATHON_PEAK = {
-        "Mon": [{"sport":"gym", "min":40, "zone":"-", "type":"Maintenance Strength",
-                              "desc":"Squats, hip work, core only. Keep strength without pre-fatigue before peak long runs."}],
-        "Tue": [{"sport":"run", "min":65, "zone":"Zone 3-4", "type":"Marathon Pace Run",
-                              "desc":"15 min easy, 4x15 min at 3:20 goal pace (4:44/km), 90 sec easy between, 10 min cool."}],
-        "Wed": [{"sport":"bike", "min":60, "zone":"Zone 2", "type":"Easy Cross-Train",
-                              "desc":"Easy spin. Maintain aerobic base without accumulating run fatigue before Saturday."}],
-        "Thu": [{"sport":"run", "min":45, "zone":"Zone 2", "type":"Easy Run",
-                              "desc":"Easy Zone 2 ~5:45/km. Legs should feel good after Wednesday's easy bike."}],
-        "Fri": None,
-        "Sat": [{"sport":"run", "min":125, "zone":"Zone 2-3", "type":"Long Run - Race Sim",
-                              "desc":"Target 30-32km. First 22km easy Zone 2. Final 10km at 3:20 race pace (4:44/km). Full nutrition protocol."}],
-        "Sun": [{"sport":"run", "min":35, "zone":"Zone 1", "type":"Recovery Run",
-                              "desc":"Very easy 35 min. You earned it."}],
+    "Mon": None,
+    "Tue": [
+        {"sport": "Run",  "min": 65, "zone": "Z2-Z4", "type": "Workout",
+         "desc": "Warm-up 15 min, 2x20 min at marathon pace (4:44/km), 3 min jog recovery, cool-down 10 min"},
+        {"sport": "Gym",  "min": 25, "zone": "N/A",   "type": "Maintenance",
+         "desc": "Maintenance strength — lighter loads, focus on activation: glutes, hips, single-leg work"},
+    ],
+    "Wed": [
+        {"sport": "Bike", "min": 60, "zone": "Z2",    "type": "Cross-Train",
+         "desc": "Easy bike — active recovery, protect legs for long run"},
+    ],
+    "Thu": [
+        {"sport": "Run",  "min": 60, "zone": "Z2-Z3", "type": "Medium-Long",
+         "desc": "Medium-long run — 14-16km, progressive last 5km approaching marathon pace"},
+    ],
+    "Fri": [
+        {"sport": "Swim", "min": 35, "zone": "Z1-Z2", "type": "Easy",
+         "desc": "Very easy swim — recovery before peak long run day"},
+    ],
+    "Sat": [
+        {"sport": "Run",  "min": 150, "zone": "Z2-Z3", "type": "Peak Long",
+         "desc": "Target 30-32km. First 22km easy Zone 2. Final 10km at 3:20 race pace (4:44/km)."},
+    ],
+    "Sun": [
+        {"sport": "Bike", "min": 60, "zone": "Z1-Z2", "type": "Easy Recovery",
+         "desc": "Gentle spin — flush legs after peak long run. Low cadence OK."},
+    ],
 }
 
 MARATHON_TAPER = {
-        "Mon": None,
-        "Tue": [{"sport":"run", "min":40, "zone":"Zone 2-3", "type":"Sharpener Run",
-                              "desc":"20 min easy + 4x1 min at marathon pace, 2 min easy jog. Keep the legs quick."}],
-        "Wed": [{"sport":"bike", "min":40, "zone":"Zone 2", "type":"Easy Cross-Train",
-                              "desc":"Easy spin. Maintain feel without adding fatigue."}],
-        "Thu": [{"sport":"run", "min":30, "zone":"Zone 2", "type":"Easy Run",
-                              "desc":"Casual 30 min. Just stay loose."}],
-        "Fri": [{"sport":"gym", "min":30, "zone":"-", "type":"Light Activation",
-                              "desc":"Bodyweight only: glute bridges, calf raises, lunges. Activation not fatigue."}],
-        "Sat": [{"sport":"run", "min":20, "zone":"Zone 1", "type":"Shakeout",
-                              "desc":"Easy 20 min with 4x20 sec race-pace strides. That's it."}],
-        "Sun": None,
+    "Mon": None,
+    "Tue": [
+        {"sport": "Run",  "min": 45, "zone": "Z2-Z3", "type": "Tempo",
+         "desc": "Warm-up 10 min, 2x10 min at marathon pace (4:44/km), cool-down 10 min. Maintain sharpness."},
+    ],
+    "Wed": [
+        {"sport": "Bike", "min": 40, "zone": "Z2",    "type": "Easy",
+         "desc": "Easy spin — keep legs fresh, nothing hard"},
+    ],
+    "Thu": [
+        {"sport": "Run",  "min": 35, "zone": "Z2",    "type": "Easy",
+         "desc": "Easy run — feel light, relaxed. Trust your fitness."},
+    ],
+    "Fri": [
+        {"sport": "Swim", "min": 25, "zone": "Z1-Z2", "type": "Easy",
+         "desc": "Short easy swim — just to move, nothing taxing"},
+    ],
+    "Sat": [
+        {"sport": "Run",  "min": 30, "zone": "Z1-Z2", "type": "Shakeout",
+         "desc": "Pre-race shakeout — easy 5-6km, 4x20s strides, stay loose"},
+    ],
+    "Sun": [
+        {"sport": "Race", "min": 200, "zone": "Race",  "type": "B-Race",
+         "desc": "FULL MARATHON — Race Day! 42.2km target 3:20. Trust the training."},
+    ],
 }
 
 
 def build_week(week_num, phase, phase_factor, focus, week_start):
-        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        rows = []
-        if phase == "Peak":
-                    template = PEAK_70_3
-elif phase in ("Taper", "70.3 Race"):
+    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    rows = []
+
+    if phase == "Peak":
+        template = PEAK_70_3
+    elif phase in ("Taper", "70.3 Race"):
         template = TAPER_70_3
-elif phase == "Recovery":
+    elif phase == "Recovery":
         template = RECOVERY
-elif phase == "M-Base":
+    elif phase == "M-Base":
         template = MARATHON_BASE
-elif phase == "M-Build":
+    elif phase == "M-Build":
         template = MARATHON_BUILD
-elif phase == "M-Peak":
+    elif phase == "M-Peak":
         template = MARATHON_PEAK
-elif phase in ("M-Taper",):
+    elif phase in ("M-Taper",):
         template = MARATHON_TAPER
-else:
+    else:
         template = MARATHON_BASE
 
     for i, day in enumerate(days):
-                day_date = week_start + timedelta(days=i)
-                if phase == "70.3 Race" and day == "Sun":
-                                rows.append({"week": week_num, "phase": phase, "date": str(day_date), "day": day,
-                                                                      "sport": "race", "type": "IRONMAN 70.3 RACE DAY", "duration_min": 270,
-                                                                      "zone": "Race", "description": "1.9km swim | 90km bike | 21.1km run. Trust the process.",
-                                                                      "week_focus": focus})
-                                continue
-                            if phase == "M-Taper" and week_num == 18 and day == "Sun":
-                                            rows.append({"week": week_num, "phase": phase, "date": str(day_date), "day": day,
-                                                                                  "sport": "race", "type": "FULL MARATHON RACE DAY", "duration_min": 240,
-                                                                                  "zone": "Race", "description": "42.2km. Start easy. Negative split. First 30km with your legs, last 12km with your heart.",
-                                                                                  "week_focus": focus})
-                                            continue
-                                        sessions = template.get(day)
+        day_date = week_start + timedelta(days=i)
+
+        # Special case: actual race days override template
+        if phase == "70.3 Race" and day == "Sun":
+            rows.append({
+                "week": week_num, "phase": phase, "focus": focus,
+                "day": day, "date": day_date.strftime("%Y-%m-%d"),
+                "sport": "Race", "duration_min": 322, "zone": "Race",
+                "session_type": "A-Race",
+                "description": "🏁 IRONMAN 70.3 — Race Day! Swim 1.9km / Bike 90km / Run 21.1km",
+            })
+            continue
+
+        if phase == "M-Taper" and week_num == 18 and day == "Sun":
+            rows.append({
+                "week": week_num, "phase": phase, "focus": focus,
+                "day": day, "date": day_date.strftime("%Y-%m-%d"),
+                "sport": "Race", "duration_min": 200, "zone": "Race",
+                "session_type": "B-Race",
+                "description": "🏃 FULL MARATHON — Race Day! 42.2km target 3:20. You've got this!",
+            })
+            continue
+
+        sessions = template.get(day)
         if sessions is None:
-                        rows.append({"week": week_num, "phase": phase, "date": str(day_date), "day": day,
-                                                              "sport": "rest", "type": "Rest / Recovery", "duration_min": 0, "zone": "-",
-                                                              "description": "Full rest. Sleep and nutrition are training.", "week_focus": focus})
-                        continue
-                    for s in sessions:
-                                    if phase in ("Taper", "70.3 Race", "Recovery", "M-Taper"):
-                                                        adj = round(s["min"] * phase_factor)
-else:
+            rows.append({
+                "week": week_num, "phase": phase, "focus": focus,
+                "day": day, "date": day_date.strftime("%Y-%m-%d"),
+                "sport": "Rest", "duration_min": 0, "zone": "N/A",
+                "session_type": "Rest",
+                "description": "Complete rest — recovery is where adaptation happens",
+            })
+            continue
+
+        for s in sessions:
+            # Taper/recovery/race weeks: no volume scaling
+            if phase in ("Taper", "70.3 Race", "Recovery", "M-Taper"):
+                adj = round(s["min"] * phase_factor)
+            else:
                 adj = round(s["min"] * phase_factor * VOLUME_SCALE)
-            rows.append({"week": week_num, "phase": phase, "date": str(day_date), "day": day,
-                                                  "sport": s["sport"], "type": s["type"], "duration_min": adj,
-                                                  "zone": s["zone"], "description": s["desc"], "week_focus": focus})
+
+            rows.append({
+                "week": week_num, "phase": phase, "focus": focus,
+                "day": day, "date": day_date.strftime("%Y-%m-%d"),
+                "sport": s["sport"], "duration_min": adj, "zone": s["zone"],
+                "session_type": s["type"],
+                "description": s["desc"],
+            })
+
     return rows
 
 
 def main():
-        console.print(Panel.fit(
-                    "[bold cyan]18-Week Dual-Race Training Plan[/bold cyan]\n"
-                    f"80/20 Triathlon + Pfitzinger Marathon  |  Volume: [yellow]{VOLUME_PROFILE.upper()}[/yellow] ({VOLUME_SCALE}x scale)\n"
-                    f"Race 1: [red]Ironman 70.3[/red]  {A_RACE}  ({(A_RACE - TODAY).days} days out)\n"
-                    f"Race 2: [green]Full Marathon[/green] {M_RACE}  ({(M_RACE - TODAY).days} days out)",
-                    border_style="blue",
-        ))
-    plan_start = TODAY - timedelta(days=TODAY.weekday())
-    all_sessions = []
-    for week_num, phase, phase_factor, focus in PHASES:
-                week_start = plan_start + timedelta(weeks=week_num - 1)
-        all_sessions.extend(build_week(week_num, phase, phase_factor, focus, week_start))
-    df = pd.DataFrame(all_sessions)
-    with open(DATA_DIR / "training_plan_14weeks.json", "w") as f:
-                json.dump(all_sessions, f, indent=2, default=str)
-    df.to_csv(DATA_DIR / "training_plan_14weeks.csv", index=False)
-    t = Table(title=f"18-Week Plan ({VOLUME_PROFILE} volume)", style="cyan", show_lines=True)
-    for col in ["Wk", "Phase", "Dates", "Hours", "Key Focus"]:
-                t.add_column(col)
-    colors = {"Peak": "red", "Taper": "green", "70.3 Race": "bold red",
-                            "Recovery": "blue", "M-Base": "cyan", "M-Build": "yellow",
-                            "M-Peak": "red", "M-Taper": "green"}
-    for week_num, phase, phase_factor, focus in PHASES:
-                wdf = df[df["week"] == week_num]
-        hrs = round(wdf["duration_min"].sum() / 60, 1)
-        d0 = wdf["date"].min(); d1 = wdf["date"].max()
-        c = colors.get(phase, "white")
-        t.add_row(str(week_num), f"[{c}]{phase}[/{c}]", f"{d0} -> {d1}", f"[yellow]{hrs}h[/yellow]", focus)
-    console.print(t)
-    peak_triathlon = df[df["phase"] == "Peak"]["duration_min"].sum()
-    peak_marathon  = df[df["phase"].isin(["M-Peak"])]["duration_min"].sum() / 2
-    console.print(f"\n  [bold]70.3 sharpener week:[/bold] [yellow]{round(peak_triathlon/60,1)}h[/yellow]")
-    console.print(f"  [bold]Marathon peak avg:[/bold]    [yellow]{round(peak_marathon/60,1)}h/week[/yellow]")
-    console.print(f"  [green]Plan saved to ~/Documents/training_data/data/[/green]")
+    plan_start = TODAY - timedelta(days=TODAY.weekday())  # Monday of current week
+    console.print(Panel(
+        f"[bold cyan]18-Week Dual-Race Training Plan[/bold cyan]\n"
+        f"Plan start: [yellow]{plan_start}[/yellow] (this Monday)\n"
+        f"A-Race: [green]Ironman 70.3 — {A_RACE}[/green]\n"
+        f"B-Race: [blue]Full Marathon — {M_RACE}[/blue]\n"
+        f"Volume profile: [magenta]{VOLUME_PROFILE}[/magenta] ({VOLUME_SCALE}x scale)",
+        title="Training Plan Generator",
+    ))
+
+    all_rows = []
+    for week_num, phase, factor, focus in PHASES:
+        week_start = plan_start + timedelta(weeks=week_num - 1)
+        rows = build_week(week_num, phase, factor, focus, week_start)
+        all_rows.extend(rows)
+
+    df = pd.DataFrame(all_rows)
+    total_sessions = len(df[df["sport"] != "Rest"])
+    total_hours = df["duration_min"].sum() / 60
+
+    console.print(f"\n[green]✓ Generated {len(PHASES)} weeks, {total_sessions} sessions, "
+                  f"{total_hours:.1f} total training hours[/green]")
+
+    csv_path = DATA_DIR / "training_plan_14weeks.csv"
+    json_path = DATA_DIR / "training_plan_14weeks.json"
+    df.to_csv(csv_path, index=False)
+    df.to_json(json_path, orient="records", indent=2)
+    console.print(f"[green]✓ Saved to {csv_path}[/green]")
+    console.print(f"[green]✓ Saved to {json_path}[/green]")
+
+    # Summary table
+    table = Table(title="Weekly Summary")
+    table.add_column("Wk", style="cyan")
+    table.add_column("Phase", style="magenta")
+    table.add_column("Sessions")
+    table.add_column("Hours", style="green")
+    table.add_column("Focus")
+
+    for week_num, phase, factor, focus in PHASES:
+        week_rows = [r for r in all_rows if r["week"] == week_num]
+        sessions = len([r for r in week_rows if r["sport"] != "Rest"])
+        hours = sum(r["duration_min"] for r in week_rows) / 60
+        table.add_row(str(week_num), phase, str(sessions), f"{hours:.1f}h", focus[:60])
+
+    console.print(table)
 
 
 if __name__ == "__main__":
-        main()
+    main()
