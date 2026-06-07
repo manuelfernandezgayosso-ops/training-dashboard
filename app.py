@@ -79,7 +79,7 @@ def run_script(script):
         if r.stdout:
             print(r.stdout, flush=True)
         if r.stderr:
-            print(f"[ERROR] {script}:\n{r.stderr}", flush=True)
+            print(f"[ERROR] {script}:\\n{r.stderr}", flush=True)
         return r.returncode == 0
     print(f"[sync] WARNING: {script} not found", flush=True)
     return False
